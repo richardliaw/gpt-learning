@@ -1,0 +1,7 @@
+*.pth
+*.bin
+*.json
+checkpoints/
+!checkpoints/.gitkeep
+*.model
+*.tiktoken
