@@ -12,7 +12,7 @@ transformer_configs = {
 
 @dataclass
 class Config:
-    vocab_size: int = 1000
+    vocab_size: int = 32000
     dims: int = 64
     seq_len: int = 32
     num_heads: int = 16
@@ -27,18 +27,21 @@ class Transformer(nn.Module):
         num_heads = config.num_heads
         num_layers = config.num_layers
         vocab_size = config.vocab_size
+        print("vocab size is unknown but set to", vocab_size)
 
         self.word_embed = nn.Embedding(vocab_size, dim)
         self.pos_embed = nn.Embedding(vocab_size, dim)
-        self.blocks = nn.ModuleList(
+        print("embedding layers created")
+        self.layers = nn.ModuleList(
             [TransformerBlock(dim, num_heads) for _ in range(num_layers)])
+        print("transformer layers created")
         self.norm = nn.LayerNorm(dim)
         self.output = nn.Linear(dim, vocab_size)
     
     def forward(self, x):
         # x: int, [seq_len]
         x = self.word_embed(x) # [seq_len, dim]
-        for block in self.blocks:
+        for block in self.layers:
             x = block(x)
         x = self.norm(x)
         return self.output(x)
@@ -53,8 +56,6 @@ class Transformer(nn.Module):
         name = candidates[0]
         cfg = Config(**transformer_configs[name])
         return cls(cfg)
-
-
 
 
 class SelfAttention(nn.Module):
@@ -96,9 +97,9 @@ class TransformerBlock(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, embed_dim):
         super().__init__()
-        self.up_proj = nn.Linear(embed_dim, 4*embed_dim)
-        self.gate_proj = nn.Linear(embed_dim, 4*embed_dim)
-        self.down_proj = nn.Linear(4*embed_dim, embed_dim)
+        self.up_proj = nn.Linear(embed_dim, 3*embed_dim)
+        self.gate_proj = nn.Linear(embed_dim, 3*embed_dim)
+        self.down_proj = nn.Linear(3*embed_dim, embed_dim)
         
 
     def forward(self, x):
