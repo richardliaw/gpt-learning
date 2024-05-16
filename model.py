@@ -2,28 +2,42 @@ import torch
 import math
 import torch.nn as nn
 from dataclasses import dataclass
+from typing import Optional
 
 from torch.nn import functional as F
 
 
 transformer_configs = {
-    "Llama-2-7b-chat": dict(num_layers=32, num_heads=32, dims=4096)
+    "Llama-2-7b-chat": dict(num_layers=32, num_heads=32, embed_dim=4096)
 }
+
+def find_multiple(n: int, k: int) -> int:
+    if n % k == 0:
+        return n
+    return n + k - (n % k)
 
 @dataclass
 class Config:
     vocab_size: int = 32000
-    dims: int = 64
+    embed_dim: int = 64
     seq_len: int = 32
     num_heads: int = 16
     num_layers: int = 10
     test_batch_size: int = 64
+    intermediate_size: Optional[int] = None
+
+    def __post_init__(self):
+        if self.intermediate_size is None:
+            hidden_dim = 4 * self.embed_dim
+            n_hidden = int(2 * hidden_dim / 3)
+            self.intermediate_size = find_multiple(n_hidden, 256)
+        # self.head_dim = self.dims // self.num_heads
 
 
 class Transformer(nn.Module):
     def __init__(self, config):
         super().__init__()
-        dim = config.dims
+        dim = config.embed_dim
         num_heads = config.num_heads
         num_layers = config.num_layers
         vocab_size = config.vocab_size
@@ -33,7 +47,7 @@ class Transformer(nn.Module):
         self.pos_embed = nn.Embedding(vocab_size, dim)
         print("embedding layers created")
         self.layers = nn.ModuleList(
-            [TransformerBlock(dim, num_heads) for _ in range(num_layers)])
+            [TransformerBlock(config) for _ in range(num_layers)])
         print("transformer layers created")
         self.norm = nn.LayerNorm(dim)
         self.output = nn.Linear(dim, vocab_size)
@@ -82,12 +96,12 @@ class SelfAttention(nn.Module):
         return result
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads):
+    def __init__(self, cfg):
         super().__init__()
-        self.ln_1 = nn.LayerNorm(embed_dim)
-        self.attention = SelfAttention(num_heads, embed_dim)
-        self.ln_2 = nn.LayerNorm(embed_dim)
-        self.ff = FeedForward(embed_dim)
+        self.ln_1 = nn.LayerNorm(cfg.embed_dim)
+        self.attention = SelfAttention(cfg.num_heads, cfg.embed_dim)
+        self.ln_2 = nn.LayerNorm(cfg.embed_dim)
+        self.ff = FeedForward(cfg)
 
     def forward(self, x):
         x = self.attention(self.ln_1(x) + x)
@@ -95,11 +109,11 @@ class TransformerBlock(nn.Module):
         return out
 
 class FeedForward(nn.Module):
-    def __init__(self, embed_dim):
+    def __init__(self, cfg):
         super().__init__()
-        self.up_proj = nn.Linear(embed_dim, 3*embed_dim)
-        self.gate_proj = nn.Linear(embed_dim, 3*embed_dim)
-        self.down_proj = nn.Linear(3*embed_dim, embed_dim)
+        self.up_proj = nn.Linear(cfg.embed_dim, cfg.intermediate_size)
+        self.gate_proj = nn.Linear(cfg.embed_dim, cfg.intermediate_size)
+        self.down_proj = nn.Linear(cfg.intermediate_size, cfg.embed_dim)
         
 
     def forward(self, x):
