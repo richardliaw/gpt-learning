@@ -4,6 +4,7 @@ import torch.nn as nn
 from dataclasses import dataclass
 from typing import Optional
 
+from torch import Tensor
 from torch.nn import functional as F
 
 
@@ -34,6 +35,20 @@ class Config:
         # self.head_dim = self.dims // self.num_heads
 
 
+class RMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-5):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+
+    def _norm(self, x):
+        return x * torch.rsqrt(torch.mean(x * x, dim=-1, keepdim=True) + self.eps)
+
+    def forward(self, x: Tensor) -> Tensor:
+        output = self._norm(x.float()).type_as(x)
+        return output * self.weight
+
+
 class Transformer(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -43,14 +58,14 @@ class Transformer(nn.Module):
         vocab_size = config.vocab_size
         print("vocab size is unknown but set to", vocab_size)
 
-        self.word_embed = nn.Embedding(vocab_size, dim)
-        self.pos_embed = nn.Embedding(vocab_size, dim)
+        self.tok_embeddings = nn.Embedding(vocab_size, dim)
+        # self.pos_embed = nn.Embedding(vocab_size, dim)
         print("embedding layers created")
         self.layers = nn.ModuleList(
             [TransformerBlock(config) for _ in range(num_layers)])
         print("transformer layers created")
-        self.norm = nn.LayerNorm(dim)
-        self.output = nn.Linear(dim, vocab_size)
+        self.norm = RMSNorm(dim)
+        self.output = nn.Linear(dim, vocab_size, bias=False)
     
     def forward(self, x):
         # x: int, [seq_len]
@@ -75,10 +90,10 @@ class Transformer(nn.Module):
 class SelfAttention(nn.Module):
     def __init__(self, num_heads, dimension) -> None:
         super().__init__()
-        self.Wq = nn.Linear(dimension, dimension)
-        self.Wk = nn.Linear(dimension, dimension)
-        self.Wv = nn.Linear(dimension, dimension)
-        self.Wo = nn.Linear(dimension, dimension)
+        self.Wq = nn.Linear(dimension, dimension, bias=False)
+        self.Wk = nn.Linear(dimension, dimension, bias=False)
+        self.Wv = nn.Linear(dimension, dimension, bias=False)
+        self.Wo = nn.Linear(dimension, dimension, bias=False)
         self.scale = 1 / math.sqrt(dimension)
         self.num_heads = num_heads
         self.dimension = dimension
@@ -98,9 +113,9 @@ class SelfAttention(nn.Module):
 class TransformerBlock(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.ln_1 = nn.LayerNorm(cfg.embed_dim)
+        self.ln_1 = RMSNorm(cfg.embed_dim)
         self.attention = SelfAttention(cfg.num_heads, cfg.embed_dim)
-        self.ln_2 = nn.LayerNorm(cfg.embed_dim)
+        self.ln_2 = RMSNorm(cfg.embed_dim)
         self.ff = FeedForward(cfg)
 
     def forward(self, x):
@@ -111,9 +126,9 @@ class TransformerBlock(nn.Module):
 class FeedForward(nn.Module):
     def __init__(self, cfg):
         super().__init__()
-        self.up_proj = nn.Linear(cfg.embed_dim, cfg.intermediate_size)
-        self.gate_proj = nn.Linear(cfg.embed_dim, cfg.intermediate_size)
-        self.down_proj = nn.Linear(cfg.intermediate_size, cfg.embed_dim)
+        self.up_proj = nn.Linear(cfg.embed_dim, cfg.intermediate_size, bias=False)
+        self.gate_proj = nn.Linear(cfg.embed_dim, cfg.intermediate_size, bias=False)
+        self.down_proj = nn.Linear(cfg.intermediate_size, cfg.embed_dim, bias=False)
         
 
     def forward(self, x):
