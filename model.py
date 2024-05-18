@@ -59,7 +59,6 @@ class Transformer(nn.Module):
         print("vocab size is unknown but set to", vocab_size)
 
         self.tok_embeddings = nn.Embedding(vocab_size, dim)
-        # self.pos_embed = nn.Embedding(vocab_size, dim)
         print("embedding layers created")
         self.layers = nn.ModuleList(
             [TransformerBlock(config) for _ in range(num_layers)])
@@ -69,11 +68,16 @@ class Transformer(nn.Module):
     
     def forward(self, x):
         # x: int, [B, seq_len]
+        print("Input", x.sum())
         x = self.tok_embeddings(x) # [B, seq_len, dim]
+        print("Embed", x.sum())
         for block in self.layers:
             x = block(x)
+        print("Last layer", x.sum())
         x = self.norm(x)
-        return self.output(x)
+        out = self.output(x)
+        print("Output", x.sum())
+        return out
 
     @classmethod
     def from_name(cls, name):

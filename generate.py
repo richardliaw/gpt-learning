@@ -11,14 +11,15 @@ print("Device target: ", default_device)
 
 def load_model(checkpoint_path):
     model = Transformer.from_name(checkpoint_path.parent.name)
+    precision = torch.bfloat16
+
     print("Found model", model)
-    print(model.state_dict())
     checkpoint = torch.load(str(checkpoint_path), mmap=True, weights_only=True)
     print("Loaded checkpoint into memory")
     model.load_state_dict(checkpoint, assign=True)
     print("Transferred weights into model")
 
-    model = model.to(device=default_device)
+    model = model.to(device=default_device, dtype=precision)
     print("Model -> GPU")
     return model.eval()
 
