@@ -1,6 +1,27 @@
 (base) ray@ip-10-0-26-36:~/default/gpt-fast$ python generate.py --prompt "hello" --max_new_tokens 2 --checkpoint_path ../gpt-learning/checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth 
 Using device=cuda
 Loading model ...
+The model Transformer(
+  (tok_embeddings): Embedding(32000, 4096)
+  (layers): ModuleList(
+    (0-31): 32 x TransformerBlock(
+      (attention): Attention(
+        (wqkv): Linear(in_features=4096, out_features=12288, bias=False)
+        (wo): Linear(in_features=4096, out_features=4096, bias=False)
+      )
+      (feed_forward): FeedForward(
+        (w1): Linear(in_features=4096, out_features=11008, bias=False)
+        (w3): Linear(in_features=4096, out_features=11008, bias=False)
+        (w2): Linear(in_features=11008, out_features=4096, bias=False)
+      )
+      (ffn_norm): RMSNorm()
+      (attention_norm): RMSNorm()
+    )
+  )
+  (norm): RMSNorm()
+  (output): Linear(in_features=4096, out_features=32000, bias=False)
+)
+
 Time to load model: 4.90 seconds
 Input tensor tensor(22173, device='cuda:0')
 Embed tensor tensor(-1.4688, device='cuda:0', dtype=torch.bfloat16)

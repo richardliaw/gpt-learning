@@ -71,9 +71,10 @@ class Transformer(nn.Module):
         print("Input", x.sum())
         x = self.tok_embeddings(x) # [B, seq_len, dim]
         print("Embed", x.sum())
-        for block in self.layers:
+        for i, block in enumerate(self.layers):
             x = block(x)
-        print("Last layer", x.sum())
+            if i < 1:
+                print(f"[{i}] layer", x.sum())
         x = self.norm(x)
         out = self.output(x)
         print("Output", x.sum())
@@ -124,8 +125,8 @@ class TransformerBlock(nn.Module):
         self.ff = FeedForward(cfg)
 
     def forward(self, x):
-        x = self.attention(self.ln_1(x) + x)
-        out = self.ff(self.ln_2(x) + x)
+        x = self.attention(self.ln_1(x)) + x
+        out = self.ff(self.ln_2(x)) + x
         return out
 
 class FeedForward(nn.Module):

@@ -46,7 +46,7 @@ def sample(logits, temp=1.0): # -> idx of vocab
     return idx, probs
 
 
-def generate(model, tokened_input, max_length=10):
+def generate(model, tokened_input, max_length=1):
     tokened_input = tokened_input.to(default_device)
     model = model.to(default_device)
     if len(tokened_input.shape) < 3:
