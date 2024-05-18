@@ -68,8 +68,8 @@ class Transformer(nn.Module):
         self.output = nn.Linear(dim, vocab_size, bias=False)
     
     def forward(self, x):
-        # x: int, [seq_len]
-        x = self.word_embed(x) # [seq_len, dim]
+        # x: int, [B, seq_len]
+        x = self.tok_embeddings(x) # [B, seq_len, dim]
         for block in self.layers:
             x = block(x)
         x = self.norm(x)
@@ -98,15 +98,16 @@ class SelfAttention(nn.Module):
         self.num_heads = num_heads
         self.dimension = dimension
     
-    def forward(self, x): # x: [Batch, seq_len, dims]
-        B, seq_len, dims = x.shape
-        q = self.Wq(x).view(-1, self.dimension // self.num_heads, self.num_heads) # q: [B, seq_len, d_h, num_heads]
-        k = self.Wk(x).view(-1, self.dimension // self.num_heads, self.num_heads) # k: [B, seq_len, d_h, num_heads]
-        v = self.Wv(x).view(-1, self.dimension // self.num_heads, self.num_heads) # v: [B, seq_len, d_h, num_heads]
-        score = q @ k.transpose(1, 2) * self.scale # : [B, seq_len, seq_len, num_heads]
+    def forward(self, x): # x: [Batch, T, dims]
+        B, T, dims = x.shape # T = seqlen
+        q = self.Wq(x).view(-1, self.dimension // self.num_heads, self.num_heads) # q: [B, T, d_h, num_heads]
+        k = self.Wk(x).view(-1, self.dimension // self.num_heads, self.num_heads) # k: [B, T, d_h, num_heads]
+        v = self.Wv(x).view(-1, self.dimension // self.num_heads, self.num_heads) # v: [B, T, d_h, num_heads]
+        score = q @ k.transpose(1, 2) # [B, T, d_h, num_heads] x [B, d_h, T, num_heads] -> [B, T, T, num_heads]
+        score = score * self.scale
         soft = torch.softmax(score, dim=-1) 
-        result = soft @ v # [B, seq_len, d_h, num_heads]
-        result = result.view(B, seq_len, dims) # B, seq_len, num_heads * d_h
+        result = soft @ v # [B, T, T, num_heads] x [B, T, d_h, num_heads] -> [B, T, d_h, num_heads]
+        result = result.view(B, T, dims) # B, T, num_heads * d_h
         result = self.Wo(result)
         return result
 
@@ -142,8 +143,8 @@ def test_attention(cfg):
     print(result.shape, torch.sum(result))
 
 @torch.inference_mode()
-def test_model(cfg):
-    model = Transformer(cfg.vocab_size, cfg.num_heads, cfg.dims, cfg.num_layers)
+def test_model(cfg: Config):
+    model = Transformer(cfg)
     my_input = torch.randint(0, cfg.vocab_size, (cfg.test_batch_size, cfg.seq_len,))
     result = model(my_input)
     print(result.shape, torch.sum(result))

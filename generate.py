@@ -28,8 +28,37 @@ def encode_tokens(tokenizer, string, bos=True, device=default_device):
         tokens = [tokenizer.bos_id()] + tokens
     return torch.tensor(tokens, dtype=torch.int, device=device)
 
-def generate(model, tokens):
-    pass
+def logits_to_probs(logits, temp): # [B, 1, Vocab] -> [B, 1, Vocab]
+    logits = logits / max(temp, 1e-8)
+    return torch.nn.functional.softmax(logits, dim=-1)
+
+def multinomial_sample_one_no_sync(probs_sort): # [B, 1, Vocab] 
+    # Does multinomial sampling without a cuda synchronization
+    q = torch.empty_like(probs_sort).exponential_(1)
+    return torch.argmax(probs_sort / q, dim=-1, keepdim=True).to(dtype=torch.int)
+
+def sample(logits, temp=1.0): # -> idx of vocab
+    B, T, V = logits.shape
+    probs = logits_to_probs(logits[:, -1, :], temp)
+    idx = multinomial_sample_one_no_sync(probs)
+    assert idx.shape == (B, 1), idx.shape
+    return idx, probs
+
+
+def generate(model, tokened_input, max_length=10):
+    tokened_input = tokened_input.to(default_device)
+    model = model.to(default_device)
+    if len(tokened_input.shape) < 3:
+        tokened_input = tokened_input.unsqueeze(0)
+    print("Input shape", tokened_input.shape)
+    x = tokened_input
+    for _ in range(max_length):
+        output = model(x)
+        idx = sample(output)[0]
+        x = torch.cat([x, idx], dim=-1)
+    print("Output shape (with prompt)", x.shape)
+    return x
+
 app = typer.Typer()
 
 @app.command()
@@ -44,8 +73,9 @@ def main(
 
     encoded = encode_tokens(tokenizer, prompt, bos=True, device=default_device)
     print('loaded model and encoded prompt')
-    output = model.generate(encoded, max_length=100, temperature=0.7)
-    print(tokenizer.decode(output[0], skip_special_tokens=True))
+    output = generate(model, encoded)#, max_length=100, temperature=0.7)
+    print(tokenizer.decode(output.tolist()))
+    # print(tokenizer.decode(output[0], skip_special_tokens=True))
 
 if __name__ == "__main__":
     app()
