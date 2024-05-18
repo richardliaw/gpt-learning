@@ -1,0 +1,64 @@
+(base) ray@ip-10-0-26-36:~/default/gpt-fast$ python generate.py --prompt "hello" --max_new_tokens 2 --checkpoint_path ../gpt-learning/checkpoints/meta-llama/Llama-2-7b-chat-hf/model.pth 
+Using device=cuda
+Loading model ...
+Time to load model: 4.90 seconds
+Input tensor tensor(22173, device='cuda:0')
+Embed tensor tensor(-1.4688, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(36.7500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-29.8750, device='cuda:0', dtype=torch.bfloat16)
+/home/ray/anaconda3/lib/python3.9/site-packages/torch/backends/cuda/__init__.py:342: FutureWarning: torch.backends.cuda.sdp_kernel() is deprecated. In the future, this context manager will be removed. Please see, torch.nn.attention.sdpa_kernel() for the new context manager, with updated signature.
+  warnings.warn(
+Input tensor tensor(29992, device='cuda:0')
+Embed tensor tensor(-0.9141, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(114.5000, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-21.3750, device='cuda:0', dtype=torch.bfloat16)
+hello@k
+Time for inference 1: 1.00 sec total, 1.99 tokens/sec
+Bandwidth achieved: 26.35 GB/s
+Input tensor tensor(22173, device='cuda:0')
+Embed tensor tensor(-1.4688, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(36.7500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-29.8750, device='cuda:0', dtype=torch.bfloat16)
+Input tensor tensor(29991, device='cuda:0')
+Embed tensor tensor(-0.1348, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(193., device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(98., device='cuda:0', dtype=torch.bfloat16)
+hello! 
+Time for inference 2: 0.07 sec total, 27.61 tokens/sec
+Bandwidth achieved: 364.92 GB/s
+Input tensor tensor(22173, device='cuda:0')
+Embed tensor tensor(-1.4688, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(36.7500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-29.8750, device='cuda:0', dtype=torch.bfloat16)
+Input tensor tensor(29991, device='cuda:0')
+Embed tensor tensor(-0.1348, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(193., device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(98., device='cuda:0', dtype=torch.bfloat16)
+hello! I
+Time for inference 3: 0.07 sec total, 27.72 tokens/sec
+Bandwidth achieved: 366.34 GB/s
+Input tensor tensor(22173, device='cuda:0')
+Embed tensor tensor(-1.4688, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(36.7500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-29.8750, device='cuda:0', dtype=torch.bfloat16)
+Input tensor tensor(29892, device='cuda:0')
+Embed tensor tensor(0.1797, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(58.2500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-4.0312, device='cuda:0', dtype=torch.bfloat16)
+hello, how
+Time for inference 4: 0.07 sec total, 27.69 tokens/sec
+Bandwidth achieved: 365.94 GB/s
+Input tensor tensor(22173, device='cuda:0')
+Embed tensor tensor(-1.4688, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(36.7500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-29.8750, device='cuda:0', dtype=torch.bfloat16)
+Input tensor tensor(29892, device='cuda:0')
+Embed tensor tensor(0.1797, device='cuda:0', dtype=torch.bfloat16)
+Last attn tensor tensor(58.2500, device='cuda:0', dtype=torch.bfloat16)
+Output tensor tensor(-4.0312, device='cuda:0', dtype=torch.bfloat16)
+hello, and
+Time for inference 5: 0.07 sec total, 27.71 tokens/sec
+Bandwidth achieved: 366.13 GB/s
+==========
+Average tokens/sec: 22.55
+Memory used: 13.51 GB

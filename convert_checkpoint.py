@@ -125,8 +125,8 @@ def convert_hf_checkpoint(
         #         del final_result[key.replace("wq", "wv")]
     else:
         final_result = merged_result
-    print(f"Saving checkpoint to {checkpoint_dir / 'model.pth'}")
-    torch.save(final_result, checkpoint_dir / "model.pth")
+    print(f"Saving checkpoint to {checkpoint_dir / 'model_learning.pth'}")
+    torch.save(final_result, checkpoint_dir / "model_learning.pth")
     if is_llama3:
         original_dir = checkpoint_dir / "original"
         tokenizer_model = original_dir / "tokenizer.model"
