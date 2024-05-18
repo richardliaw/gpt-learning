@@ -103,11 +103,15 @@ class SelfAttention(nn.Module):
         self.num_heads = num_heads
         self.dimension = dimension
     
-    def forward(self, x): # x: [Batch, T, dims]
+    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor, mask: Tensor): # x: [Batch, T, dims]
         B, T, dims = x.shape # T = seqlen
         q = self.Wq(x).view(-1, self.dimension // self.num_heads, self.num_heads) # q: [B, T, d_h, num_heads]
         k = self.Wk(x).view(-1, self.dimension // self.num_heads, self.num_heads) # k: [B, T, d_h, num_heads]
         v = self.Wv(x).view(-1, self.dimension // self.num_heads, self.num_heads) # v: [B, T, d_h, num_heads]
+
+        q = apply_rotary_emb(q, freqs_cis)
+        k = apply_rotary_emb(k, freqs_cis)
+
         score = q @ k.transpose(1, 2) # [B, T, d_h, num_heads] x [B, d_h, T, num_heads] -> [B, T, T, num_heads]
         score = score * self.scale
         soft = torch.softmax(score, dim=-1) 
@@ -124,8 +128,8 @@ class TransformerBlock(nn.Module):
         self.ln_2 = RMSNorm(cfg.embed_dim)
         self.ff = FeedForward(cfg)
 
-    def forward(self, x):
-        x = self.attention(self.ln_1(x)) + x
+    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor, mask: Tensor):
+        x = self.attention(self.ln_1(x), input_pos, freqs_cis, mask) + x
         out = self.ff(self.ln_2(x)) + x
         return out
 
