@@ -20,6 +20,7 @@ def load_model(checkpoint_path):
     print("Transferred weights into model")
 
     model = model.to(device=default_device, dtype=precision)
+    self.setup_caches()
     print("Model -> GPU")
     return model.eval()
 

@@ -26,13 +26,14 @@ class Config:
     num_layers: int = 10
     test_batch_size: int = 64
     intermediate_size: Optional[int] = None
+    rope_base: int = 10000
+    block_size: int = 2048
 
     def __post_init__(self):
         if self.intermediate_size is None:
             hidden_dim = 4 * self.embed_dim
             n_hidden = int(2 * hidden_dim / 3)
             self.intermediate_size = find_multiple(n_hidden, 256)
-        # self.head_dim = self.dims // self.num_heads
 
 
 class RMSNorm(nn.Module):
@@ -52,6 +53,7 @@ class RMSNorm(nn.Module):
 class Transformer(nn.Module):
     def __init__(self, config):
         super().__init__()
+        self.config = config
         dim = config.embed_dim
         num_heads = config.num_heads
         num_layers = config.num_layers
@@ -65,14 +67,22 @@ class Transformer(nn.Module):
         print("transformer layers created")
         self.norm = RMSNorm(dim)
         self.output = nn.Linear(dim, vocab_size, bias=False)
+
+    def setup_caches(self):
+        self.freqs_cis = precompute_freqs_cis(
+            seq_len=self.config.block_size, 
+            n_elem=self.config.embed_dim // self.config.num_heads, 
+            base=self.config.rope_base, 
+            dtype=self.output.weight.dtype)
     
-    def forward(self, x):
+    def forward(self, x, input_pos):
         # x: int, [B, seq_len]
         print("Input", x.sum())
+        freqs_cis = self.freqs_cis[input_pos]
         x = self.tok_embeddings(x) # [B, seq_len, dim]
         print("Embed", x.sum())
         for i, block in enumerate(self.layers):
-            x = block(x)
+            x = block(x, input_pos, freqs_cis)
             if i < 1:
                 print(f"[{i}] layer", x.sum())
         x = self.norm(x)
@@ -92,6 +102,33 @@ class Transformer(nn.Module):
         return cls(cfg)
 
 
+def precompute_freqs_cis(
+    seq_len: int, n_elem: int, base: int = 10000,
+    dtype: torch.dtype = torch.bfloat16
+) -> Tensor:
+    freqs = 1.0 / (base ** (torch.arange(0, n_elem, 2)[: (n_elem // 2)].float() / n_elem))
+    t = torch.arange(seq_len, device=freqs.device)
+    freqs = torch.outer(t, freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    cache = torch.stack([freqs_cis.real, freqs_cis.imag], dim=-1)
+    return cache.to(dtype=dtype)
+
+
+def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
+    xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+    freqs_cis = freqs_cis.view(1, xshaped.size(1), 1, xshaped.size(3), 2)
+    x_out2 = torch.stack(
+        [
+            xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
+            xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
+        ],
+        -1,
+    )
+
+    x_out2 = x_out2.flatten(3)
+    return x_out2.type_as(x)
+
+
 class SelfAttention(nn.Module):
     def __init__(self, num_heads, dimension) -> None:
         super().__init__()
@@ -103,7 +140,7 @@ class SelfAttention(nn.Module):
         self.num_heads = num_heads
         self.dimension = dimension
     
-    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor, mask: Tensor): # x: [Batch, T, dims]
+    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor): # x: [Batch, T, dims]
         B, T, dims = x.shape # T = seqlen
         q = self.Wq(x).view(-1, self.dimension // self.num_heads, self.num_heads) # q: [B, T, d_h, num_heads]
         k = self.Wk(x).view(-1, self.dimension // self.num_heads, self.num_heads) # k: [B, T, d_h, num_heads]
@@ -128,8 +165,8 @@ class TransformerBlock(nn.Module):
         self.ln_2 = RMSNorm(cfg.embed_dim)
         self.ff = FeedForward(cfg)
 
-    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor, mask: Tensor):
-        x = self.attention(self.ln_1(x), input_pos, freqs_cis, mask) + x
+    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor):
+        x = self.attention(self.ln_1(x), input_pos, freqs_cis) + x
         out = self.ff(self.ln_2(x)) + x
         return out
 
