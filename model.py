@@ -120,13 +120,14 @@ class TransformerBlock(nn.Module):
 
 
 class SelfAttention(nn.Module):
-    def __init__(self, num_heads, dimension) -> None:
+    def __init__(self, num_heads, dimension, block_size) -> None:
         super().__init__()
         self.Wq = nn.Linear(dimension, dimension, bias=False)
         self.Wk = nn.Linear(dimension, dimension, bias=False)
         self.Wv = nn.Linear(dimension, dimension, bias=False)
         self.Wo = nn.Linear(dimension, dimension, bias=False)
         self.num_heads = num_heads
+        self.mask = torch.tril(torch.ones(block_size, block_size, dtype=torch.bool)).view(1, 1, block_size, block_size)
         self.dimension = dimension
     
     def forward(self, x, input_pos: Tensor, freqs_cis: Tensor): # x: [Batch, T, dims]
@@ -140,11 +141,12 @@ class SelfAttention(nn.Module):
 
         B, T, d_h, num_heads = q.shape
         q = q.reshape(B, num_heads, T, d_h)
-        k = k.reshape(B, num_heads, d_h, T)
+        k = k.reshape(B, num_heads, T, d_h)
         v = v.reshape(B, num_heads, T, d_h)
 
-        score = q @ k # [B, num_heads, T, d_h] x [B, num_heads, d_h, T] -> [B, num_heads, T, T]
-        score = score / math.sqrt(k.shape[2])
+        attn = q @ k.transpose(-2, -1) # [B, num_heads, T, d_h] x [B, num_heads, d_h, T] -> [B, num_heads, T, T]
+        attn = torch.masked_fill(attn, self.mask[:, :, T, T] == 0, float('-inf'))
+        attn = attn / math.sqrt(k.shape[2])
         soft = torch.softmax(score, dim=-1) 
         result = soft @ v # [B,num_heads, T, T] x [B, num_heads, T, d_h] -> [B, num_heads, T, d_h]
         result = result.transpose(1, 2).contiguous().view(B, T, dims) # B, T, num_heads * d_h
