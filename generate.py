@@ -12,16 +12,14 @@ print("Device target: ", default_device)
 def load_model(checkpoint_path):
     model = Transformer.from_name(checkpoint_path.parent.name)
     precision = torch.bfloat16
-
-    print("Found model", model)
     checkpoint = torch.load(str(checkpoint_path), mmap=True, weights_only=True)
     print("Loaded checkpoint into memory")
     model.load_state_dict(checkpoint, assign=True)
     print("Transferred weights into model")
-
     model = model.to(device=default_device, dtype=precision)
-    self.setup_caches()
-    print("Model -> GPU")
+    with torch.device(default_device):
+        model.setup_caches()
+    print("Model -> GPU", model)
     return model.eval()
 
 def encode_tokens(tokenizer, string, bos=True, device=default_device):
@@ -47,17 +45,27 @@ def sample(logits, temp=1.0): # -> idx of vocab
     return idx, probs
 
 
-def generate(model, tokened_input, max_length=1):
+def generate(model, tokened_input, max_length=10):
     tokened_input = tokened_input.to(default_device)
     model = model.to(default_device)
-    if len(tokened_input.shape) < 3:
+    if len(tokened_input.shape) < 2:
         tokened_input = tokened_input.unsqueeze(0)
     print("Input shape", tokened_input.shape)
+    B, T = tokened_input.shape
+
     x = tokened_input
+    temp = torch.ones(B, T, device=default_device)
+    input_pos = torch.arange(0, T, device=default_device) * temp
+    input_pos = input_pos.to(torch.int32)
+    print("input_pos dtype", input_pos.dtype)
     for _ in range(max_length):
-        output = model(x)
+        output = model(x, input_pos) # [B, T], [B, T]
         idx = sample(output)[0]
         x = torch.cat([x, idx], dim=-1)
+        B, T = x.shape
+        temp = torch.ones(B, T, device=default_device)
+        input_pos = torch.arange(0, T, device=default_device) * temp
+        input_pos = input_pos.to(torch.int32)
     print("Output shape (with prompt)", x.shape)
     return x
 

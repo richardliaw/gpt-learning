@@ -67,6 +67,7 @@ class Transformer(nn.Module):
         print("transformer layers created")
         self.norm = RMSNorm(dim)
         self.output = nn.Linear(dim, vocab_size, bias=False)
+        self.freqs_cis: Optional[Tensor] = None
 
     def setup_caches(self):
         self.freqs_cis = precompute_freqs_cis(
@@ -76,15 +77,16 @@ class Transformer(nn.Module):
             dtype=self.output.weight.dtype)
     
     def forward(self, x, input_pos):
-        # x: int, [B, seq_len]
+        # x: int, [B, T, dim] // 
         print("Input", x.sum())
-        freqs_cis = self.freqs_cis[input_pos]
+        freqs_cis = self.freqs_cis[input_pos] # [B, T, head_dim / 2, 2]
         x = self.tok_embeddings(x) # [B, seq_len, dim]
-        print("Embed", x.sum())
+        print("embed tensor", x.sum())
         for i, block in enumerate(self.layers):
             x = block(x, input_pos, freqs_cis)
             if i < 1:
                 print(f"[{i}] layer", x.sum())
+        print(f"Last layer", x.sum())
         x = self.norm(x)
         out = self.output(x)
         print("Output", x.sum())
@@ -102,60 +104,6 @@ class Transformer(nn.Module):
         return cls(cfg)
 
 
-def precompute_freqs_cis(
-    seq_len: int, n_elem: int, base: int = 10000,
-    dtype: torch.dtype = torch.bfloat16
-) -> Tensor:
-    freqs = 1.0 / (base ** (torch.arange(0, n_elem, 2)[: (n_elem // 2)].float() / n_elem))
-    t = torch.arange(seq_len, device=freqs.device)
-    freqs = torch.outer(t, freqs)
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
-    cache = torch.stack([freqs_cis.real, freqs_cis.imag], dim=-1)
-    return cache.to(dtype=dtype)
-
-
-def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
-    xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
-    freqs_cis = freqs_cis.view(1, xshaped.size(1), 1, xshaped.size(3), 2)
-    x_out2 = torch.stack(
-        [
-            xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
-            xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
-        ],
-        -1,
-    )
-
-    x_out2 = x_out2.flatten(3)
-    return x_out2.type_as(x)
-
-
-class SelfAttention(nn.Module):
-    def __init__(self, num_heads, dimension) -> None:
-        super().__init__()
-        self.Wq = nn.Linear(dimension, dimension, bias=False)
-        self.Wk = nn.Linear(dimension, dimension, bias=False)
-        self.Wv = nn.Linear(dimension, dimension, bias=False)
-        self.Wo = nn.Linear(dimension, dimension, bias=False)
-        self.scale = 1 / math.sqrt(dimension)
-        self.num_heads = num_heads
-        self.dimension = dimension
-    
-    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor): # x: [Batch, T, dims]
-        B, T, dims = x.shape # T = seqlen
-        q = self.Wq(x).view(-1, self.dimension // self.num_heads, self.num_heads) # q: [B, T, d_h, num_heads]
-        k = self.Wk(x).view(-1, self.dimension // self.num_heads, self.num_heads) # k: [B, T, d_h, num_heads]
-        v = self.Wv(x).view(-1, self.dimension // self.num_heads, self.num_heads) # v: [B, T, d_h, num_heads]
-
-        q = apply_rotary_emb(q, freqs_cis)
-        k = apply_rotary_emb(k, freqs_cis)
-
-        score = q @ k.transpose(1, 2) # [B, T, d_h, num_heads] x [B, d_h, T, num_heads] -> [B, T, T, num_heads]
-        score = score * self.scale
-        soft = torch.softmax(score, dim=-1) 
-        result = soft @ v # [B, T, T, num_heads] x [B, T, d_h, num_heads] -> [B, T, d_h, num_heads]
-        result = result.view(B, T, dims) # B, T, num_heads * d_h
-        result = self.Wo(result)
-        return result
 
 class TransformerBlock(nn.Module):
     def __init__(self, cfg):
@@ -170,6 +118,41 @@ class TransformerBlock(nn.Module):
         out = self.ff(self.ln_2(x)) + x
         return out
 
+
+class SelfAttention(nn.Module):
+    def __init__(self, num_heads, dimension) -> None:
+        super().__init__()
+        self.Wq = nn.Linear(dimension, dimension, bias=False)
+        self.Wk = nn.Linear(dimension, dimension, bias=False)
+        self.Wv = nn.Linear(dimension, dimension, bias=False)
+        self.Wo = nn.Linear(dimension, dimension, bias=False)
+        self.num_heads = num_heads
+        self.dimension = dimension
+    
+    def forward(self, x, input_pos: Tensor, freqs_cis: Tensor): # x: [Batch, T, dims]
+        B, T, dims = x.shape # T = seqlen
+        q = self.Wq(x).view(B, T, self.dimension // self.num_heads, self.num_heads) # q: [B, T, d_h, num_heads]
+        k = self.Wk(x).view(B, T, self.dimension // self.num_heads, self.num_heads) # k: [B, T, d_h, num_heads]
+        v = self.Wv(x).view(B, T, self.dimension // self.num_heads, self.num_heads) # v: [B, T, d_h, num_heads]
+
+        q = apply_rotary_emb(q, freqs_cis) # B, T, d_h, num_heads
+        k = apply_rotary_emb(k, freqs_cis)
+
+        B, T, d_h, num_heads = q.shape
+        q = q.reshape(B, num_heads, T, d_h)
+        k = k.reshape(B, num_heads, d_h, T)
+        v = v.reshape(B, num_heads, T, d_h)
+
+        score = q @ k # [B, num_heads, T, d_h] x [B, num_heads, d_h, T] -> [B, num_heads, T, T]
+        score = score / math.sqrt(k.shape[2])
+        soft = torch.softmax(score, dim=-1) 
+        result = soft @ v # [B,num_heads, T, T] x [B, num_heads, T, d_h] -> [B, num_heads, T, d_h]
+        result = result.transpose(1, 2).contiguous().view(B, T, dims) # B, T, num_heads * d_h
+        
+        result = self.Wo(result)
+        return result
+
+
 class FeedForward(nn.Module):
     def __init__(self, cfg):
         super().__init__()
@@ -182,28 +165,54 @@ class FeedForward(nn.Module):
         return self.down_proj(F.silu(self.up_proj(x)) * self.gate_proj(x))
 
 
-def test_attention(cfg):
-    attn = SelfAttention(num_heads=8, dimension=cfg.dims)
-    embedding = torch.rand(cfg.seq_len, cfg.dims)
-    result = attn(embedding)
-    print(result.shape, torch.sum(result))
 
-@torch.inference_mode()
-def test_model(cfg: Config):
-    model = Transformer(cfg)
-    my_input = torch.randint(0, cfg.vocab_size, (cfg.test_batch_size, cfg.seq_len,))
-    result = model(my_input)
-    print(result.shape, torch.sum(result))
-
-class Tokenizer(nn.Module):
-    pass
+def precompute_freqs_cis(
+    seq_len: int, n_elem: int, base: int = 10000,
+    dtype: torch.dtype = torch.bfloat16
+) -> Tensor:
+    freqs = 1.0 / (base ** (torch.arange(0, n_elem, 2)[: (n_elem // 2)].float() / n_elem))
+    t = torch.arange(seq_len, device=freqs.device)
+    freqs = torch.outer(t, freqs)
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+    cache = torch.stack([freqs_cis.real, freqs_cis.imag], dim=-1)
+    return cache.to(dtype=dtype)
 
 
+def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
+    B, T, head_dim, num_heads = x.shape
+    xshaped = x.float().reshape(B, T, num_heads, head_dim // 2, 2)
+    freqs_cis = freqs_cis.view(1, xshaped.size(1), 1, xshaped.size(3), 2)
+    x_out2 = torch.stack(
+        [
+            xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
+            xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
+        ],
+        -1,
+    )
 
-if __name__ == "__main__":
-    # test_attention(Config())
-    test_model(Config())
-    # prompt = ""
-    # tokenizer = Tokenizer()
-    # model = Model()
-    # print(model(prompt))
+    x_out2 = x_out2.flatten(3)
+    x_out2 = x_out2.reshape(B, T, head_dim, num_heads)
+    return x_out2.type_as(x)
+
+
+# if __name__ == "__main__":
+#     # test_attention(Config())
+#     test_model(Config())
+#     # prompt = ""
+#     # tokenizer = Tokenizer()
+#     # model = Model()
+#     # print(model(prompt))
+
+
+# def test_attention(cfg):
+#     attn = SelfAttention(num_heads=8, dimension=cfg.dims)
+#     embedding = torch.rand(cfg.seq_len, cfg.dims)
+#     result = attn(embedding)
+#     print(result.shape, torch.sum(result))
+
+# @torch.inference_mode()
+# def test_model(cfg: Config):
+#     model = Transformer(cfg)
+#     my_input = torch.randint(0, cfg.vocab_size, (cfg.test_batch_size, cfg.seq_len,))
+#     result = model(my_input)
+#     print(result.shape, torch.sum(result))
