@@ -16,7 +16,7 @@ import torch
 wd = Path(__file__).parent.parent.resolve()
 sys.path.append(str(wd))
 
-# from model import ModelArgs
+from model import ModelArgs
 
 
 @torch.inference_mode()
@@ -47,8 +47,8 @@ def convert_hf_checkpoint(
                 "Merging them into one model.pth file is not supported for Llama 3.")
 
 
-    # config = ModelArgs.from_name(model_name)
-    # print(f"Model config {config.__dict__}")
+    config = ModelArgs.from_name(model_name)
+    print(f"Model config {config.__dict__}")
 
     # Load the json file containing weight mapping
     if not is_llama3:
@@ -112,17 +112,17 @@ def convert_hf_checkpoint(
 
             final_result[new_key] = value
 
-        # for key in tuple(final_result.keys()):
-        #     if "wq" in key:
-        #         q = final_result[key]
-        #         k = final_result[key.replace("wq", "wk")]
-        #         v = final_result[key.replace("wq", "wv")]
-        #         q = permute(q, config.n_head)
-        #         k = permute(k, config.n_local_heads)
-        #         final_result[key.replace("wq", "wqkv")] = torch.cat([q, k, v])
-        #         del final_result[key]
-        #         del final_result[key.replace("wq", "wk")]
-        #         del final_result[key.replace("wq", "wv")]
+        for key in tuple(final_result.keys()):
+            if "wq" in key:
+                q = final_result[key]
+                k = final_result[key.replace("wq", "wk")]
+                v = final_result[key.replace("wq", "wv")]
+                q = permute(q, config.n_head)
+                k = permute(k, config.n_local_heads)
+                final_result[key.replace("wq", "wqkv")] = torch.cat([q, k, v])
+                del final_result[key]
+                del final_result[key.replace("wq", "wk")]
+                del final_result[key.replace("wq", "wv")]
     else:
         final_result = merged_result
     print(f"Saving checkpoint to {checkpoint_dir / 'model_learning.pth'}")

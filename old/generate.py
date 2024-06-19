@@ -1,6 +1,6 @@
 import torch
 import typer
-from model import Transformer, Config
+from model import Transformer, ModelArgs
 from tokenizer import get_tokenizer, TokenizerInterface
 
 from pathlib import Path
@@ -8,6 +8,9 @@ from pathlib import Path
 default_device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 print("Device target: ", default_device)
 
+max_total_len = 50
+max_seq_len = 2
+assert max_seq_len < max_total_len
 
 def load_model(checkpoint_path):
     model = Transformer.from_name(checkpoint_path.parent.name)
@@ -17,8 +20,9 @@ def load_model(checkpoint_path):
     model.load_state_dict(checkpoint, assign=True)
     print("Transferred weights into model")
     model = model.to(device=default_device, dtype=precision)
+    # [(k, float(v.sum())) for k, v in model.state_dict().items()
     with torch.device(default_device):
-        model.setup_caches()
+        model.setup_caches(max_total_len)
     print("Model -> GPU", model)
     return model.eval()
 
@@ -45,7 +49,7 @@ def sample(logits, temp=1.0): # -> idx of vocab
     return idx, probs
 
 
-def generate(model, tokened_input, max_length=10):
+def generate(model, tokened_input):
     tokened_input = tokened_input.to(default_device)
     model = model.to(default_device)
     if len(tokened_input.shape) < 2:
@@ -58,7 +62,7 @@ def generate(model, tokened_input, max_length=10):
     input_pos = torch.arange(0, T, device=default_device) * temp
     input_pos = input_pos.to(torch.int32)
     print("input_pos dtype", input_pos.dtype)
-    for _ in range(max_length):
+    for _ in range(max_seq_len):
         output = model(x, input_pos) # [B, T], [B, T]
         idx = sample(output)[0]
         x = torch.cat([x, idx], dim=-1)
