@@ -65,7 +65,7 @@ def prefill(model: Transformer, x: torch.Tensor, input_pos: torch.Tensor, length
 
 def decode_one_token(model: Transformer, x: torch.Tensor, input_pos: torch.Tensor, **sampling_kwargs) -> Tuple[torch.Tensor, torch.Tensor]:
     # input_pos: [B, 1]
-    assert input_pos.shape[-1] == 1
+    assert input_pos.shape[-1] == 1, input_pos.shape
     logits = model(x, input_pos)
     return sample(logits, **sampling_kwargs)
 
@@ -177,19 +177,19 @@ def generate(
     empty = torch.empty([B, T_new], dtype=dtype, device=device)
     empty[:, :T] = prompts
     seq = empty
+    # input_pos = torch.stack([torch.arange(0, T, device=device) for _ in prompt_lengths])
     input_pos = torch.arange(0, T, device=device)
-
     indices = torch.tensor(list(prompt_lengths.keys())).unsqueeze(1)
-    seq_lengths = torch.tensor(list(prompt_lengths.values()))
+    seq_lengths = torch.tensor(list(prompt_lengths.values()), dtype=torch.int)
+    # Think I need to mask out the attention so that softmax ignores the pads?
     next_tokens = prefill(model, prompts, input_pos, seq_lengths, **sampling_kwargs).clone()
-    import ipdb; ipdb.set_trace()
     assert next_tokens.shape == (B, 1)
     if is_speculative:
         prefill(draft_model, prompts, input_pos, **sampling_kwargs)
 
     seq[indices, seq_lengths] = next_tokens
 
-    input_pos = torch.tensor([T], device=device, dtype=torch.int)
+    input_pos = seq_lengths.to(device)
     accept_counts = [0] * (speculate_k + 1)
 
     # if is_speculative:
@@ -209,7 +209,8 @@ def generate(
         #     input_pos = input_pos + num_added
         #     next_token = next_tokens[-1]
     # else:
-    generated_tokens, _ = decode_n_tokens(model, next_tokens.view(B, -1), input_pos, max_new_tokens - 1, callback=callback, **sampling_kwargs)
+    import ipdb; ipdb.set_trace()
+    generated_tokens, _ = decode_n_tokens(model, next_tokens.view(B, -1), input_pos.view(B, -1), max_new_tokens - 1, callback=callback, **sampling_kwargs)
     seq[T + 1:] = torch.cat(generated_tokens)
 
     generate_stats = {

@@ -127,6 +127,9 @@ class Transformer(nn.Module):
         assert self.freqs_cis is not None, "Caches must be initialized first"
         mask = self.causal_mask[None, None, input_pos]
         freqs_cis = self.freqs_cis[input_pos]
+        print("input pos", input_pos)
+        if len(freqs_cis.shape) > 3:
+            import ipdb; ipdb.set_trace()
         x = self.tok_embeddings(idx)
         
         for i, layer in enumerate(self.layers):
@@ -180,7 +183,6 @@ class Attention(nn.Module):
 
     def forward(self, x: Tensor, freqs_cis: Tensor, mask: Tensor, input_pos: Optional[Tensor] = None) -> Tensor:
         bsz, seqlen, _ = x.shape
-
         kv_size = self.n_local_heads * self.head_dim
         q, k, v = self.wqkv(x).split([self.dim, kv_size, kv_size], dim=-1)
         q = q.view(bsz, seqlen, self.n_head, self.head_dim)
@@ -267,14 +269,31 @@ def precompute_freqs_cis(
 
 def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
     xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
-    freqs_cis = freqs_cis.view(1, xshaped.size(1), 1, xshaped.size(3), 2)
-    x_out2 = torch.stack(
-        [
+    B, S, Dim_half = xshaped.shape[0], xshaped.shape[1], xshaped.shape[3]
+    print(xshaped.shape)
+    freqs_cis = freqs_cis.view(B, S, 1, Dim_half, 2)
+    rotated = [
             xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
             xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
-        ],
-        -1,
-    )
+        ]
+    x_out2 = torch.stack(rotated, -1)
 
     x_out2 = x_out2.flatten(3)
     return x_out2.type_as(x)
+
+
+if __name__ == "__main__":
+    x = torch.randn((3, 13, 32, 128))
+    freqs_cis = torch.randn((3, 13, 64, 2))
+    xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
+    B, S, Dim_half = xshaped.shape[0], xshaped.shape[1], xshaped.shape[3]
+    print(xshaped.shape)
+    freqs_cis = freqs_cis.view(B, S, 1, Dim_half, 2)
+    rotated = [
+            xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
+            xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
+        ]
+    x_out2 = torch.stack(rotated, -1)
+
+    x_out2 = x_out2.flatten(3)
+    print(x_out2.type_as(x).shape)
