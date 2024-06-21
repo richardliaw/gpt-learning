@@ -224,10 +224,11 @@ def encode_tokens(tokenizer, string, bos=True, device=default_device):
         tokens = [tokenizer.bos_id()] + tokens
     return torch.tensor(tokens, dtype=torch.int, device=device)
 
-def _load_model(checkpoint_path, device, precision, use_tp):
+def _load_model(checkpoint_path, device, precision, use_tp, dummy=False):
     use_cuda = 'cuda' in device
     with torch.device('meta'):
-        model = Transformer.from_name(checkpoint_path.parent.name)
+        model_name = "stories15" if dummy else checkpoint_path.parent.name
+        model = Transformer.from_name(model_name)
 
     if "int8" in str(checkpoint_path):
         print("Using int8 weight-only quantization!")
@@ -243,10 +244,11 @@ def _load_model(checkpoint_path, device, precision, use_tp):
         simple_quantizer = WeightOnlyInt4QuantHandler(model, groupsize)
         model = simple_quantizer.convert_for_runtime()
 
-    checkpoint = torch.load(str(checkpoint_path), mmap=True, weights_only=True)
-    if "model" in checkpoint and "stories" in str(checkpoint_path):
-        checkpoint = checkpoint["model"]
-    model.load_state_dict(checkpoint, assign=True)
+    if not dummy:
+        checkpoint = torch.load(str(checkpoint_path), mmap=True, weights_only=True)
+        if "model" in checkpoint and "stories" in str(checkpoint_path):
+            checkpoint = checkpoint["model"]
+        model.load_state_dict(checkpoint, assign=True)
 
     if use_tp:
         from tp import apply_tp
@@ -310,7 +312,7 @@ def main(
 
     print("Loading model ...")
     t0 = time.time()
-    model = _load_model(checkpoint_path, device, precision, use_tp)
+    model = _load_model(checkpoint_path, device, precision, use_tp, dummy=True)
 
     if is_speculative:
         draft_model = _load_model(draft_checkpoint_path, device, precision, use_tp)
